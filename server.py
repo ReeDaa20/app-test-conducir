@@ -16,11 +16,42 @@ DATA_DIR = ROOT / "data"
 DB_PATH = DATA_DIR / "autoescuela.sqlite"
 SEED_PATH = DATA_DIR / "seed_questions.json"
 
+THEME_LABELS = {
+    "senales": "Señales",
+    "prioridad": "Prioridad",
+    "velocidad": "Velocidad",
+    "alumbrado": "Alumbrado",
+    "seguridad": "Seguridad vial",
+    "documentacion": "Documentación",
+    "maniobras": "Maniobras",
+    "mecanica": "Mecánica",
+    "normas": "Normas generales",
+}
+
+THEME_KEYWORDS = {
+    "senales": ["señal", "linea", "línea", "marca vial", "stop", "semáforo", "panel", "baliza"],
+    "prioridad": ["prioridad", "ceder", "paso", "glorieta", "intersección", "peatón", "peatones"],
+    "velocidad": ["velocidad", "km/h", "adelantar", "distancia de frenado"],
+    "alumbrado": ["luz", "luces", "alumbrado", "antiniebla", "cruce", "carretera iluminada"],
+    "seguridad": ["alcohol", "droga", "cinturón", "casco", "accidente", "airbag", "somnolencia", "seguridad"],
+    "documentacion": ["permiso", "licencia", "seguro", "itv", "documento", "documentación", "matrícula"],
+    "maniobras": ["estacionar", "parar", "cambio de dirección", "marcha atrás", "giro", "carril", "maniobra"],
+    "mecanica": ["neumático", "freno", "motor", "aceite", "batería", "mecánica", "ruedas"],
+}
+
 
 def db_connect() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def classify_theme(title: str, options: list[str] | None = None, fallback: str = "normas") -> str:
+    text = " ".join([title, *(options or [])]).lower()
+    for theme, keywords in THEME_KEYWORDS.items():
+        if any(keyword in text for keyword in keywords):
+            return theme
+    return fallback
 
 
 def init_db() -> None:
@@ -31,6 +62,7 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS questions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 category TEXT NOT NULL,
+                theme TEXT NOT NULL DEFAULT 'normas',
                 title TEXT NOT NULL,
                 image_key TEXT,
                 image_url TEXT,
@@ -115,6 +147,7 @@ def ensure_question_columns(conn: sqlite3.Connection) -> None:
     }
     migrations = {
         "image_url": "ALTER TABLE questions ADD COLUMN image_url TEXT",
+        "theme": "ALTER TABLE questions ADD COLUMN theme TEXT NOT NULL DEFAULT 'normas'",
         "source": "ALTER TABLE questions ADD COLUMN source TEXT NOT NULL DEFAULT 'demo'",
         "external_id": "ALTER TABLE questions ADD COLUMN external_id TEXT",
         "updated_at": "ALTER TABLE questions ADD COLUMN updated_at TEXT",
@@ -130,6 +163,15 @@ def ensure_question_columns(conn: sqlite3.Connection) -> None:
     }
     if "test_id" not in attempt_columns:
         conn.execute("ALTER TABLE attempts ADD COLUMN test_id INTEGER")
+    rows = conn.execute(
+        "SELECT id, title, options_json FROM questions WHERE theme IS NULL OR theme = 'normas'"
+    ).fetchall()
+    for row in rows:
+        options = json.loads(row["options_json"]) if row["options_json"] else []
+        conn.execute(
+            "UPDATE questions SET theme = ? WHERE id = ?",
+            (classify_theme(row["title"], options), row["id"]),
+        )
 
 
 def seed_questions(conn: sqlite3.Connection) -> None:
@@ -146,6 +188,8 @@ def import_questions(
         normalized.append(
             {
                 "category": question.get("category", "general"),
+                "theme": question.get("theme")
+                or classify_theme(question["title"], question.get("options")),
                 "title": question["title"],
                 "image_key": question.get("image_key"),
                 "image_url": question.get("image_url"),
@@ -160,13 +204,14 @@ def import_questions(
     conn.executemany(
         """
         INSERT INTO questions
-            (category, title, image_key, image_url, options_json, correct_index,
+            (category, theme, title, image_key, image_url, options_json, correct_index,
              explanation, source, external_id, updated_at)
         VALUES
-            (:category, :title, :image_key, :image_url, :options_json, :correct_index,
+            (:category, :theme, :title, :image_key, :image_url, :options_json, :correct_index,
              :explanation, :source, :external_id, CURRENT_TIMESTAMP)
         ON CONFLICT(source, external_id) DO UPDATE SET
             category = excluded.category,
+            theme = excluded.theme,
             title = excluded.title,
             image_key = excluded.image_key,
             image_url = excluded.image_url,
@@ -184,6 +229,8 @@ def question_for_test(row: sqlite3.Row) -> dict:
     return {
         "id": row["id"],
         "category": row["category"],
+        "theme": row["theme"],
+        "themeLabel": THEME_LABELS.get(row["theme"], row["theme"].title()),
         "title": row["title"],
         "imageKey": row["image_key"],
         "imageUrl": row["image_url"],
@@ -239,6 +286,9 @@ class AutoescuelaHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/tests":
             self.get_tests()
+            return
+        if parsed.path == "/api/dashboard":
+            self.get_dashboard()
             return
         if parsed.path == "/api/questions":
             self.get_questions(parsed.query)
@@ -405,6 +455,11 @@ class AutoescuelaHandler(BaseHTTPRequestHandler):
 
     def get_questions(self, query: str) -> None:
         params = parse_qs(query)
+        mode = params.get("mode", [None])[0]
+        if mode in {"mistakes", "smart"}:
+            limit = min(max(int(params.get("limit", ["30"])[0]), 1), 30)
+            self.get_practice_questions(mode, limit)
+            return
         test_id = params.get("testId", [None])[0]
         if test_id is not None:
             self.get_test_questions(int(test_id))
@@ -423,7 +478,7 @@ class AutoescuelaHandler(BaseHTTPRequestHandler):
         with db_connect() as conn:
             rows = conn.execute(
                 f"""
-                SELECT id, category, title, image_key, image_url, options_json,
+                SELECT id, category, theme, title, image_key, image_url, options_json,
                        correct_index, explanation, source, external_id, updated_at
                 FROM questions
                 {where}
@@ -434,6 +489,192 @@ class AutoescuelaHandler(BaseHTTPRequestHandler):
             ).fetchall()
 
         json_response(self, {"questions": [question_for_test(row) for row in rows]})
+
+    def get_practice_questions(self, mode: str, limit: int) -> None:
+        with db_connect() as conn:
+            if mode == "mistakes":
+                rows = conn.execute(
+                    """
+                    SELECT q.id, q.category, q.theme, q.title, q.image_key, q.image_url,
+                           q.options_json, q.correct_index, q.explanation, q.source,
+                           q.external_id, q.updated_at,
+                           COUNT(aa.id) AS wrong_count
+                    FROM attempt_answers aa
+                    JOIN questions q ON q.id = aa.question_id
+                    WHERE aa.is_correct = 0
+                    GROUP BY q.id
+                    ORDER BY wrong_count DESC, RANDOM()
+                    LIMIT ?
+                    """,
+                    (limit,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    WITH theme_stats AS (
+                        SELECT q.theme,
+                               AVG(CASE WHEN aa.is_correct = 1 THEN 1.0 ELSE 0.0 END) AS accuracy
+                        FROM attempt_answers aa
+                        JOIN questions q ON q.id = aa.question_id
+                        GROUP BY q.theme
+                    ),
+                    question_stats AS (
+                        SELECT q.id,
+                               SUM(CASE WHEN aa.is_correct = 0 THEN 1 ELSE 0 END) AS wrongs,
+                               COUNT(aa.id) AS attempts
+                        FROM questions q
+                        LEFT JOIN attempt_answers aa ON aa.question_id = q.id
+                        GROUP BY q.id
+                    )
+                    SELECT q.id, q.category, q.theme, q.title, q.image_key, q.image_url,
+                           q.options_json, q.correct_index, q.explanation, q.source,
+                           q.external_id, q.updated_at
+                    FROM questions q
+                    LEFT JOIN question_stats qs ON qs.id = q.id
+                    LEFT JOIN theme_stats ts ON ts.theme = q.theme
+                    WHERE q.source = 'testsconducir-pool'
+                    ORDER BY
+                        (COALESCE(qs.wrongs, 0) * 8)
+                        + CASE WHEN COALESCE(ts.accuracy, 1) < 0.8 THEN 4 ELSE 0 END
+                        + CASE WHEN COALESCE(qs.attempts, 0) = 0 THEN 2 ELSE 0 END
+                        DESC,
+                        RANDOM()
+                    LIMIT ?
+                    """,
+                    (limit,),
+                ).fetchall()
+
+            if len(rows) < limit:
+                existing = {row["id"] for row in rows}
+                filler = conn.execute(
+                    f"""
+                    SELECT id, category, theme, title, image_key, image_url,
+                           options_json, correct_index, explanation, source,
+                           external_id, updated_at
+                    FROM questions
+                    WHERE source = 'testsconducir-pool'
+                    {"AND id NOT IN (" + ",".join("?" for _ in existing) + ")" if existing else ""}
+                    ORDER BY RANDOM()
+                    LIMIT ?
+                    """,
+                    [*existing, limit - len(rows)] if existing else [limit - len(rows)],
+                ).fetchall()
+                rows = [*rows, *filler]
+
+        title = "Repaso de fallos" if mode == "mistakes" else "Test inteligente"
+        json_response(
+            self,
+            {
+                "test": {"id": None, "title": title, "questionCount": len(rows), "mode": mode},
+                "questions": [question_for_test(row) for row in rows],
+            },
+        )
+
+    def get_dashboard(self) -> None:
+        with db_connect() as conn:
+            totals = conn.execute(
+                """
+                SELECT COUNT(*) AS attempts,
+                       COALESCE(SUM(passed), 0) AS passed,
+                       COALESCE(ROUND(AVG(errors), 1), 0) AS avg_errors
+                FROM attempts
+                WHERE test_id IS NOT NULL
+                """
+            ).fetchone()
+            recent = conn.execute(
+                """
+                SELECT errors, passed, score, created_at
+                FROM attempts
+                WHERE test_id IS NOT NULL
+                ORDER BY id DESC
+                LIMIT 10
+                """
+            ).fetchall()
+            theme_rows = conn.execute(
+                """
+                SELECT q.theme,
+                       COUNT(aa.id) AS answered,
+                       COALESCE(SUM(CASE WHEN aa.is_correct = 1 THEN 1 ELSE 0 END), 0) AS correct,
+                       COALESCE(SUM(CASE WHEN aa.is_correct = 0 THEN 1 ELSE 0 END), 0) AS wrong
+                FROM questions q
+                LEFT JOIN attempt_answers aa ON aa.question_id = q.id
+                WHERE q.source = 'testsconducir-pool'
+                GROUP BY q.theme
+                ORDER BY q.theme
+                """
+            ).fetchall()
+            repeated_mistakes = conn.execute(
+                """
+                SELECT COUNT(*) AS total
+                FROM (
+                    SELECT question_id
+                    FROM attempt_answers
+                    WHERE is_correct = 0
+                    GROUP BY question_id
+                    HAVING COUNT(*) >= 2
+                )
+                """
+            ).fetchone()["total"]
+
+        recent_errors = [row["errors"] for row in recent]
+        recent_passed = [row["passed"] for row in recent]
+        if len(recent_errors) < 5:
+            readiness = {
+                "level": "pending",
+                "label": "Aún faltan datos",
+                "detail": "Haz al menos 5 simulacros para medir tu preparación.",
+            }
+        elif len(recent_errors) >= 10 and max(recent_errors[:10]) <= 2 and sum(recent_passed[:10]) >= 9:
+            readiness = {
+                "level": "ready",
+                "label": "Listo para presentarte",
+                "detail": "Tus últimos simulacros están en margen de examen.",
+            }
+        elif sum(recent_passed[:5]) >= 3:
+            readiness = {
+                "level": "good",
+                "label": "Vas bien",
+                "detail": "Sigue bajando fallos hasta moverte en 0-2 de forma constante.",
+            }
+        else:
+            readiness = {
+                "level": "not-ready",
+                "label": "Aún no estás listo",
+                "detail": "Refuerza los temas rojos y repasa tus fallos antes de presentarte.",
+            }
+
+        themes = []
+        for row in theme_rows:
+            accuracy = round((row["correct"] / row["answered"]) * 100, 1) if row["answered"] else None
+            themes.append(
+                {
+                    "id": row["theme"],
+                    "label": THEME_LABELS.get(row["theme"], row["theme"].title()),
+                    "answered": row["answered"],
+                    "correct": row["correct"],
+                    "wrong": row["wrong"],
+                    "accuracy": accuracy,
+                    "status": "pending"
+                    if accuracy is None
+                    else ("pass" if accuracy >= 80 else "fail"),
+                }
+            )
+
+        json_response(
+            self,
+            {
+                "summary": {
+                    "attempts": totals["attempts"],
+                    "passed": totals["passed"],
+                    "failed": totals["attempts"] - totals["passed"],
+                    "averageErrors": totals["avg_errors"],
+                    "repeatedMistakes": repeated_mistakes,
+                },
+                "readiness": readiness,
+                "themes": themes,
+                "recent": [dict(row) for row in recent],
+            },
+        )
 
     def get_pool_questions(self, limit: int) -> None:
         with db_connect() as conn:
@@ -452,7 +693,7 @@ class AutoescuelaHandler(BaseHTTPRequestHandler):
                 return
             rows = conn.execute(
                 """
-                SELECT q.id, q.category, q.title, q.image_key, q.image_url,
+                SELECT q.id, q.category, q.theme, q.title, q.image_key, q.image_url,
                        q.options_json, q.correct_index, q.explanation, q.source,
                        q.external_id, q.updated_at
                 FROM test_pool_questions tpq
@@ -491,7 +732,7 @@ class AutoescuelaHandler(BaseHTTPRequestHandler):
                 return
             rows = conn.execute(
                 """
-                SELECT q.id, q.category, q.title, q.image_key, q.image_url,
+                SELECT q.id, q.category, q.theme, q.title, q.image_key, q.image_url,
                        q.options_json, q.correct_index, q.explanation, q.source,
                        q.external_id, q.updated_at
                 FROM test_pool_questions tpq
@@ -544,7 +785,7 @@ class AutoescuelaHandler(BaseHTTPRequestHandler):
         with db_connect() as conn:
             rows = conn.execute(
                 f"""
-                SELECT id, category, title, image_key, image_url, options_json,
+                SELECT id, category, theme, title, image_key, image_url, options_json,
                        correct_index, explanation, source, external_id, updated_at
                 FROM questions
                 WHERE id IN ({placeholders})

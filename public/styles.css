@@ -253,6 +253,116 @@ h2 {
   gap: 12px;
 }
 
+.dashboard {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr 0.8fr 1.4fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.readiness-card,
+.metric-card,
+.themes-card {
+  min-height: 126px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgba(23, 33, 43, 0.06);
+}
+
+.readiness-card span,
+.metric-card span,
+.themes-card span {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-weight: 800;
+  font-size: 13px;
+}
+
+.readiness-card strong,
+.metric-card strong,
+.themes-card strong {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 24px;
+}
+
+.readiness-card p,
+.metric-card p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.readiness-card.ready {
+  border-color: rgba(27, 154, 104, 0.35);
+  background: var(--green-soft);
+}
+
+.readiness-card.good {
+  border-color: rgba(244, 183, 64, 0.45);
+  background: #fff7e7;
+}
+
+.readiness-card.not-ready {
+  border-color: rgba(214, 69, 69, 0.35);
+  background: var(--red-soft);
+}
+
+.themes-card > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.theme-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.theme-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 8px;
+  padding: 7px 8px;
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.theme-row span {
+  margin: 0;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theme-row strong {
+  margin: 0;
+  font-size: 14px;
+}
+
+.theme-row small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+}
+
+.theme-row.pass {
+  background: var(--green-soft);
+}
+
+.theme-row.fail {
+  background: var(--red-soft);
+}
+
+.practice-actions {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
 .exam-help {
   padding: 12px 14px;
   border: 1px solid #cfe0ef;
@@ -634,6 +744,11 @@ h2 {
   color: var(--muted);
 }
 
+.answer-review small {
+  margin-left: 8px;
+  font-weight: 800;
+}
+
 .answer-review.is-good {
   color: var(--green);
   font-weight: 800;
@@ -749,6 +864,10 @@ h2 {
     grid-template-columns: 1fr;
   }
 
+  .dashboard {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .progress-panel {
     order: -1;
   }
@@ -787,6 +906,15 @@ h2 {
 
   .category-grid {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard,
+  .theme-list {
+    grid-template-columns: 1fr;
+  }
+
+  .practice-actions {
+    flex-direction: column;
   }
 
   .exam-table {

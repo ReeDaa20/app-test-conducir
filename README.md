@@ -1,14 +1,19 @@
 # AutoTest Pro
 
-Primera versión de una aplicación para practicar tests de autoescuela.
+Aplicacion para practicar simulacros de examen de conducir.
 
-## Qué incluye
+## Que incluye
 
-- Frontend web con selección de test, preguntas, progreso, temporizador y revisión.
-- Backend en Python con API local.
-- Base de datos SQLite para guardar resultados.
-- Banco inicial de preguntas de ejemplo.
-- Conectores opcionales para importar preguntas desde API, JSON o webs gratuitas compatibles.
+- Home con 100 simulacros de 30 preguntas.
+- Temporizador de examen de 30 minutos.
+- Guardado local de resultados en SQLite.
+- Estado por test: sin hacer, apto o no apto.
+- Revision de respuestas con tema, respuesta elegida, correcta y explicacion.
+- Panel de preparacion con indicador de si estas listo para examen.
+- Estadisticas por temas.
+- Modo para repasar fallos.
+- Test inteligente basado en fallos, temas flojos y preguntas nuevas.
+- Importadores opcionales desde API, JSON o webs compatibles.
 
 ## Arranque
 
@@ -16,37 +21,27 @@ Primera versión de una aplicación para practicar tests de autoescuela.
 python server.py
 ```
 
-Después abre:
+Despues abre:
 
 ```text
 http://127.0.0.1:8000
 ```
 
-La base de datos se crea automáticamente en `data/autoescuela.sqlite` al arrancar.
+La base de datos incluida en `data/autoescuela.sqlite` ya contiene el pool de simulacros.
 
-## Sincronizar preguntas externas
+## Regenerar pool externo
 
-La DGT ofrece tests web gratuitos con preguntas reales o similares y los actualiza regularmente, pero no publica una API oficial estable para apps. Por eso la app trabaja con proveedores intercambiables.
+```powershell
+python sync_dgt.py testsconducir-pool --tests 100 --questions-per-test 30
+```
 
-API vía Apify:
+## Otros importadores
+
+API via Apify:
 
 ```powershell
 $env:APIFY_TOKEN="tu_token"
 python sync_dgt.py apify
-```
-
-Por defecto usa permiso B (`DGT_PERMIT_ID=1`) y castellano (`DGT_LANGUAGE_ID=1`).
-
-Web gratuita compatible:
-
-```powershell
-python sync_dgt.py testsconducir --limit 10
-```
-
-Pool de 100 tests externos de 30 preguntas:
-
-```powershell
-python sync_dgt.py testsconducir-pool --tests 100 --questions-per-test 30
 ```
 
 JSON propio o de otra API:
@@ -54,5 +49,3 @@ JSON propio o de otra API:
 ```powershell
 python sync_dgt.py json --file preguntas.json --source mi-api
 ```
-
-El JSON puede ser una lista o tener una clave `questions`. Cada pregunta debe incluir enunciado, opciones, respuesta correcta y, opcionalmente, imagen.

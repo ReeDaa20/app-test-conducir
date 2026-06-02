@@ -28,6 +28,8 @@ const lastScore = document.querySelector("#lastScore");
 const attemptCount = document.querySelector("#attemptCount");
 const sourceSummary = document.querySelector("#sourceSummary");
 const topActions = document.querySelector("#topActions");
+const dashboard = document.querySelector("#dashboard");
+const practiceActions = document.querySelector("#practiceActions");
 
 const labels = {
   all: "Aleatorio",
@@ -38,6 +40,8 @@ const labels = {
   testsconducir_b: "TestsConducir B",
   simulacro: "Simulacro",
   simulacro_externo: "Simulacro",
+  repaso_fallos: "Repaso de fallos",
+  test_inteligente: "Test inteligente",
 };
 
 const visualMap = {
@@ -179,11 +183,53 @@ function renderExamList() {
   });
 }
 
+function renderDashboard(data) {
+  const readiness = data.readiness;
+  const themes = data.themes
+    .map((theme) => {
+      const value = theme.accuracy === null ? "-" : `${theme.accuracy}%`;
+      return `
+        <div class="theme-row ${theme.status}">
+          <span>${theme.label}</span>
+          <strong>${value}</strong>
+          <small>${theme.wrong} fallos</small>
+        </div>
+      `;
+    })
+    .join("");
+
+  dashboard.innerHTML = `
+    <section class="readiness-card ${readiness.level}">
+      <span>Preparación</span>
+      <strong>${readiness.label}</strong>
+      <p>${readiness.detail}</p>
+    </section>
+    <section class="metric-card">
+      <span>Simulacros</span>
+      <strong>${data.summary.attempts}</strong>
+      <p>${data.summary.passed} aprobados · ${data.summary.failed} suspendidos</p>
+    </section>
+    <section class="metric-card">
+      <span>Media fallos</span>
+      <strong>${data.summary.averageErrors}</strong>
+      <p>${data.summary.repeatedMistakes} preguntas trampa personales</p>
+    </section>
+    <section class="themes-card">
+      <div>
+        <span>Resultados por temas</span>
+        <strong>80% mínimo</strong>
+      </div>
+      <div class="theme-list">${themes}</div>
+    </section>
+  `;
+}
+
 function renderQuestion() {
   const question = state.questions[state.current];
   const selected = state.answers.get(question.id);
   questionTitle.textContent = question.title;
-  questionCategory.textContent = labels[question.category] || question.category;
+  questionCategory.textContent =
+    state.currentTest?.mode ? state.currentTest.title : labels[question.category] || question.category;
   questionCounter.textContent = `${state.current + 1}/${state.questions.length}`;
 
   const visual = visualMap[question.imageKey] || ["square", "blue", ""];
@@ -264,6 +310,31 @@ async function startTest(testId) {
   state.category = "simulacro";
 
   examList.hidden = true;
+  dashboard.hidden = true;
+  practiceActions.hidden = true;
+  topActions.hidden = false;
+  resultPanel.hidden = true;
+  testLayout.hidden = false;
+  startTimer();
+  renderQuestion();
+}
+
+async function startPracticeMode(mode) {
+  const data = await api(`/api/questions?mode=${mode}&limit=30`);
+  state.questions = data.questions;
+  if (!state.questions.length) {
+    throw new Error("Todavía no hay fallos suficientes para crear este test.");
+  }
+  state.current = 0;
+  state.answers = new Map();
+  state.result = null;
+  state.finishing = false;
+  state.currentTest = data.test;
+  state.category = mode === "mistakes" ? "repaso_fallos" : "test_inteligente";
+
+  examList.hidden = true;
+  dashboard.hidden = true;
+  practiceActions.hidden = true;
   topActions.hidden = false;
   resultPanel.hidden = true;
   testLayout.hidden = false;
@@ -297,6 +368,7 @@ async function finishTest({ confirmBeforeFinish = true } = {}) {
   renderResult();
   await refreshHistory();
   await refreshTests();
+  await refreshDashboard();
 }
 
 function renderResult() {
@@ -321,18 +393,32 @@ function renderResult() {
   `;
 
   document.querySelector("#backToCategories").addEventListener("click", resetHome);
-  document.querySelector("#repeatTest").addEventListener("click", () => startTest(result.testId));
+  document.querySelector("#repeatTest").addEventListener("click", () => {
+    if (result.testId) {
+      startTest(result.testId);
+    } else if (result.category === "repaso_fallos") {
+      startPracticeMode("mistakes");
+    } else {
+      startPracticeMode("smart");
+    }
+  });
 }
 
 function renderReviewCard(question, index) {
-  const selectedText =
-    question.selectedIndex === null ? "Sin responder" : question.options[question.selectedIndex];
-  const correctText = question.options[question.correctIndex];
+  const optionRows = question.options
+    .map((option, optionIndex) => {
+      const isCorrect = optionIndex === question.correctIndex;
+      const isSelected = optionIndex === question.selectedIndex;
+      const className = isCorrect ? "is-good" : isSelected ? "is-bad" : "";
+      const suffix = isCorrect ? "Correcta" : isSelected ? "Tu respuesta" : "Descartada";
+      return `<p class="answer-review ${className}">${String.fromCharCode(65 + optionIndex)}. ${option} <small>${suffix}</small></p>`;
+    })
+    .join("");
   return `
     <article class="review-card ${question.isCorrect ? "" : "is-error"}">
+      <span class="pill">${question.themeLabel || "Tema"}</span>
       <strong>${index + 1}. ${question.title}</strong>
-      <p class="answer-review ${question.isCorrect ? "is-good" : "is-bad"}">Tu respuesta: ${selectedText}</p>
-      <p class="answer-review is-good">Correcta: ${correctText}</p>
+      ${optionRows}
       <p class="muted">${question.explanation}</p>
     </article>
   `;
@@ -348,6 +434,8 @@ function resetHome() {
   state.currentTest = null;
   state.finishing = false;
   examList.hidden = false;
+  dashboard.hidden = false;
+  practiceActions.hidden = false;
   testLayout.hidden = true;
   resultPanel.hidden = true;
 }
@@ -364,6 +452,11 @@ async function refreshTests() {
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
   lastScore.textContent = latest ? latest.score.toFixed(1) : "--";
   renderExamList();
+}
+
+async function refreshDashboard() {
+  const data = await api("/api/dashboard");
+  renderDashboard(data);
 }
 
 async function refreshHistory() {
@@ -412,6 +505,8 @@ function bindEvents() {
   });
 
   document.querySelector("#newTestButton").addEventListener("click", resetHome);
+  document.querySelector("#mistakesButton").addEventListener("click", () => startPracticeMode("mistakes"));
+  document.querySelector("#smartButton").addEventListener("click", () => startPracticeMode("smart"));
 
   document.querySelectorAll(".nav-tab").forEach((tab) => {
     tab.addEventListener("click", () => {
@@ -426,6 +521,7 @@ function bindEvents() {
 async function boot() {
   bindEvents();
   await refreshTests();
+  await refreshDashboard();
   await refreshHistory();
 }
 
