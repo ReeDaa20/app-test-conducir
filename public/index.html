@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AutoTest Pro</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <a class="brand" href="/" aria-label="AutoTest Pro">
+          <span class="brand-mark">A</span>
+          <span>
+            <strong>AutoTest Pro</strong>
+            <small>Permiso B</small>
+          </span>
+        </a>
+
+        <nav class="nav-tabs" aria-label="Vistas principales">
+          <button class="nav-tab is-active" data-view="practice" title="Tests">
+            <span aria-hidden="true">✓</span>
+            <span>Tests</span>
+          </button>
+          <button class="nav-tab" data-view="history" title="Historial">
+            <span aria-hidden="true">↺</span>
+            <span>Historial</span>
+          </button>
+        </nav>
+
+        <section class="stat-panel" aria-label="Resumen">
+          <div>
+            <span class="muted">Última nota</span>
+            <strong id="lastScore">--</strong>
+          </div>
+          <div>
+            <span class="muted">Tests guardados</span>
+            <strong id="attemptCount">0</strong>
+          </div>
+        </section>
+      </aside>
+
+      <main class="main">
+        <section class="topbar">
+          <div>
+            <p class="eyebrow" id="sourceSummary">Simulacros externos</p>
+            <h1>Examen de conducir para mi baby</h1>
+          </div>
+          <div class="top-actions" id="topActions" hidden>
+            <span class="timer" id="timer">00:00</span>
+            <button class="ghost-button" id="newTestButton" title="Nuevo test">Nuevo</button>
+          </div>
+        </section>
+
+        <section class="view is-visible" id="practiceView">
+          <section class="exam-list" id="examList"></section>
+
+          <section class="test-layout" id="testLayout" hidden>
+            <div class="question-panel">
+              <div class="question-head">
+                <div>
+                  <span class="pill" id="questionCategory">Test</span>
+                  <h2 id="questionTitle"></h2>
+                </div>
+                <span class="counter" id="questionCounter">1/10</span>
+              </div>
+
+              <div class="visual-strip" id="visualStrip" aria-hidden="true">
+                <span></span>
+              </div>
+
+              <div class="answers" id="answerList"></div>
+
+              <div class="question-actions">
+                <button class="ghost-button" id="prevButton" title="Pregunta anterior">Anterior</button>
+                <button class="primary-button" id="nextButton" title="Pregunta siguiente">Siguiente</button>
+              </div>
+            </div>
+
+            <aside class="progress-panel">
+              <div class="progress-ring">
+                <span id="progressPercent">0%</span>
+              </div>
+              <div class="question-map" id="questionMap"></div>
+            </aside>
+          </section>
+
+          <section class="result-panel" id="resultPanel" hidden></section>
+        </section>
+
+        <section class="view" id="historyView">
+          <div class="history-list" id="historyList"></div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
